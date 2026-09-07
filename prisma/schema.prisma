@@ -1,0 +1,67 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Category {
+  id    Int    @id @default(autoincrement())
+  name  String
+  slug  String @unique
+  posts Post[] @relation("PostToCategory")
+}
+
+model Author {
+  id     Int    @id @default(autoincrement())
+  name   String
+  email  String @unique
+  avatar String
+  posts  Post[]
+}
+
+model Tag {
+  id          Int    @id @default(autoincrement())
+  displayName String
+  slug        String @unique
+  posts       Post[] @relation("PostToTag")
+}
+
+model Post {
+  id            Int        @id @default(autoincrement())
+  title         String
+  slug          String     @unique
+  excerpt       String
+  content       String // We will store block components as a JSON string or rich text string
+  allowComments Boolean    @default(true)
+  cover         String?
+  authorId      Int
+  author        Author     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  categories    Category[] @relation("PostToCategory")
+  tags          Tag[]      @relation("PostToTag")
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}
+
+model Setting {
+  id              Int        @id @default(1) // Single type pattern, will always be id: 1
+  blogName        String
+  blogDescription String
+  logo            String?
+  text            String
+  menuLinks       MenuLink[]
+}
+
+model MenuLink {
+  id        Int     @id @default(autoincrement())
+  link      String
+  text      String
+  newTab    Boolean @default(false)
+  settingId Int
+  setting   Setting @relation(fields: [settingId], references: [id], onDelete: Cascade)
+}
