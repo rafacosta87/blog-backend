@@ -139,7 +139,7 @@ async function main() {
       id: 1, // enforce single type pattern
       blogName: seedData.global.siteName,
       blogDescription: seedData.global.siteDescription,
-      logo: '/uploads/favicon.png',
+      logo: '/uploads/logo.svg',
       text: seedData.about.title,
       menuLinks: {
         create: [
