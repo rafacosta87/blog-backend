@@ -8,71 +8,83 @@ const __dirname = path.dirname(__filename);
 
 const prisma = new PrismaClient();
 
-// Paths to find original seed data from Strapi
-const STRAPI_DATA_PATH = path.join(__dirname, '../../data/data.json');
-const STRAPI_UPLOADS_SRC = path.join(__dirname, '../../data/uploads');
+const slugify = (text) => {
+  if (!text) return '';
+  return text
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-');
+};
+
+// Caminhos dos dados e arquivos de mídia estáticos
+const SEED_DATA_PATH = path.join(__dirname, '../../data/data.json');
+const UPLOADS_SRC = path.join(__dirname, '../../data/uploads');
 const NEW_UPLOADS_DEST = path.join(__dirname, './public/uploads');
 
 async function main() {
-  console.log('🏁 Starting database seed process...');
+  console.log('🏁 Iniciando o processo de carga inicial do banco de dados...');
 
-  // 1. Copy uploads directory
+  // 1. Copiar diretório de uploads
   try {
-    if (await fs.pathExists(STRAPI_UPLOADS_SRC)) {
+    if (await fs.pathExists(UPLOADS_SRC)) {
       await fs.ensureDir(NEW_UPLOADS_DEST);
-      await fs.copy(STRAPI_UPLOADS_SRC, NEW_UPLOADS_DEST);
-      console.log('✅ Uploads folder copied successfully!');
+      await fs.copy(UPLOADS_SRC, NEW_UPLOADS_DEST);
+      console.log('✅ Pasta de uploads copiada com sucesso!');
     } else {
-      console.log('⚠️ Original uploads folder not found.');
+      console.log('⚠️ Pasta de uploads original não encontrada.');
     }
   } catch (error) {
-    console.error('❌ Error copying uploads:', error);
+    console.error('❌ Erro ao copiar pasta de uploads:', error);
   }
 
-  // 2. Clear current database records
+  // 2. Limpar registros do banco atual
   await prisma.menuLink.deleteMany({});
   await prisma.setting.deleteMany({});
   await prisma.post.deleteMany({});
   await prisma.category.deleteMany({});
   await prisma.author.deleteMany({});
   await prisma.tag.deleteMany({});
-  console.log('🧹 Cleaned database tables.');
+  console.log('🧹 Tabelas do banco de dados limpas com sucesso.');
 
-  // 3. Read seed JSON file
-  if (!(await fs.pathExists(STRAPI_DATA_PATH))) {
-    console.error(`❌ Strapi seed data not found at: ${STRAPI_DATA_PATH}`);
+  // 3. Ler arquivo JSON de sementes
+  if (!(await fs.pathExists(SEED_DATA_PATH))) {
+    console.error(`❌ Arquivo de dados não encontrado em: ${SEED_DATA_PATH}`);
     process.exit(1);
   }
 
-  const rawData = await fs.readFile(STRAPI_DATA_PATH, 'utf-8');
+  const rawData = await fs.readFile(SEED_DATA_PATH, 'utf-8');
   const seedData = JSON.parse(rawData);
 
-  // 4. Seed Categories
-  const categoryIdMap = {}; // Maps Strapi ID to our DB ID (though they might align)
-  console.log('🌱 Seeding Categories...');
+  // 4. Cadastrar Categorias
+  const categoryIdMap = {};
+  console.log('🌱 Cadastrando Categorias...');
   for (let i = 0; i < seedData.categories.length; i++) {
     const cat = seedData.categories[i];
-    // Strapi dummy uses indexes or sequential IDs
     const createdCat = await prisma.category.create({
       data: {
         name: cat.name,
-        slug: cat.slug,
+        slug: cat.slug || slugify(cat.name),
       },
     });
-    // In Strapi JSON, category reference uses id (1-based index based on position in seed usually)
     const originalId = i + 1;
     categoryIdMap[originalId] = createdCat.id;
   }
-  console.log(`✅ Created ${seedData.categories.length} Categories.`);
+  console.log(`✅ Criadas ${seedData.categories.length} Categorias.`);
 
-  // 5. Seed Authors
+  // 5. Cadastrar Autores
   const authorIdMap = {};
-  console.log('🌱 Seeding Authors...');
+  console.log('🌱 Cadastrando Autores...');
   for (let i = 0; i < seedData.authors.length; i++) {
     const auth = seedData.authors[i];
     const createdAuth = await prisma.author.create({
       data: {
         name: auth.name,
+        slug: auth.slug || slugify(auth.name),
         email: auth.email,
         avatar: `/uploads/${auth.avatar}`,
       },
@@ -80,15 +92,15 @@ async function main() {
     const originalId = i + 1;
     authorIdMap[originalId] = createdAuth.id;
   }
-  console.log(`✅ Created ${seedData.authors.length} Authors.`);
+  console.log(`✅ Criados ${seedData.authors.length} Autores.`);
 
-  // 6. Create dummy tags (Strapi's original schema has tags, let's create some based on categories or default ones)
-  console.log('🌱 Seeding Tags...');
+  // 6. Cadastrar Tags
+  console.log('🌱 Cadastrando Tags...');
   const tagsList = [
     { displayName: 'JavaScript', slug: 'javascript' },
     { displayName: 'Web Development', slug: 'web-development' },
     { displayName: 'React', slug: 'react' },
-    { displayName: 'Strapi Migration', slug: 'strapi-migration' },
+    { displayName: 'Next.js', slug: 'nextjs' },
     { displayName: 'Node.js', slug: 'nodejs' },
   ];
   const createdTags = [];
@@ -98,24 +110,20 @@ async function main() {
     });
     createdTags.push(t);
   }
-  console.log(`✅ Created ${createdTags.length} Tags.`);
+  console.log(`✅ Criadas ${createdTags.length} Tags.`);
 
-  // 7. Seed Posts (Articles)
-  console.log('🌱 Seeding Posts...');
+  // 7. Cadastrar Posts (Artigos)
+  console.log('🌱 Cadastrando Posts...');
   for (const article of seedData.articles) {
     const mappedAuthorId = authorIdMap[article.author.id];
     const mappedCategoryId = categoryIdMap[article.category.id];
-
-    // Find tags to connect (let's connect 1 or 2 random tags to each post)
     const randomTags = createdTags.slice(0, Math.floor(Math.random() * 3) + 1);
-
-    // Format block content into a text string
     const stringifiedContent = JSON.stringify(article.blocks || []);
 
     await prisma.post.create({
       data: {
         title: article.title,
-        slug: article.slug,
+        slug: article.slug || slugify(article.title),
         excerpt: article.description,
         content: stringifiedContent,
         allowComments: true,
@@ -130,13 +138,13 @@ async function main() {
       },
     });
   }
-  console.log(`✅ Created ${seedData.articles.length} Posts.`);
+  console.log(`✅ Criados ${seedData.articles.length} Posts.`);
 
-  // 8. Seed Setting (Single Type)
-  console.log('🌱 Seeding Settings...');
-  const setting = await prisma.setting.create({
+  // 8. Cadastrar Configurações Globais (Settings)
+  console.log('🌱 Cadastrando Configurações Globais...');
+  await prisma.setting.create({
     data: {
-      id: 1, // enforce single type pattern
+      id: 1,
       blogName: seedData.global.siteName,
       blogDescription: seedData.global.siteDescription,
       logo: '/uploads/logo.svg',
@@ -150,14 +158,14 @@ async function main() {
       },
     },
   });
-  console.log('✅ Created Global Settings and MenuLinks.');
+  console.log('✅ Configurações Globais criadas com sucesso.');
 
-  console.log('🎉 Seeding successfully completed!');
+  console.log('🎉 Carga inicial finalizada com sucesso!');
 }
 
 main()
   .catch((e) => {
-    console.error('❌ Error during seed:', e);
+    console.error('❌ Erro durante o processo de seed:', e);
     process.exit(1);
   })
   .finally(async () => {

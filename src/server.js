@@ -56,7 +56,8 @@ app.get('/api/settings', async (req, res) => {
 
 // Get all posts (with filtering and pagination optionally)
 app.get('/api/posts', async (req, res) => {
-  const { category, tag, author } = req.query;
+  const { category, tag, author, start, limit } = req.query;
+
   try {
     const where = {};
     if (category) {
@@ -66,16 +67,18 @@ app.get('/api/posts', async (req, res) => {
       where.tags = { some: { slug: tag } };
     }
     if (author) {
-      // Converte "otavio-miranda" de volta para busca pelo nome do autor
-      const authorName = author.replace(/-/g, ' ');
       where.author = {
-        name: {
-          contains: authorName,
-        },
+        OR: [
+          { slug: author },
+          { name: { contains: author.replace(/-/g, ' ') } },
+        ],
       };
     }
+
     const posts = await prisma.post.findMany({
       where,
+      skip: start ? Number(start) : 0, // Pula os posts que já foram exibidos
+      take: limit ? Number(limit) : 6, // Pega os próximos "limit" posts
       include: {
         author: true,
         categories: true,
@@ -83,6 +86,7 @@ app.get('/api/posts', async (req, res) => {
       },
       orderBy: { createdAt: 'desc' },
     });
+
     const formattedPosts = posts.map((post) => {
       try {
         return {
@@ -93,6 +97,7 @@ app.get('/api/posts', async (req, res) => {
         return post;
       }
     });
+
     res.json(formattedPosts);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch posts', details: error.message });
@@ -277,10 +282,9 @@ app.get('/api/authors', async (req, res) => {
   }
 });
 
-// Create Author (With automatic slug and id generation)
-// Create Author (Ajustado para a estrutura real do seu schema.prisma)
+// Create Author (With automatic slug generation)
 app.post('/api/authors', async (req, res) => {
-  const { name, email, avatar } = req.body;
+  const { name, slug, email, avatar } = req.body;
   try {
     if (!name) {
       return res.status(400).json({ error: 'Failed to create author', details: 'Argument `name` is missing.' });
@@ -295,6 +299,7 @@ app.post('/api/authors', async (req, res) => {
     const author = await prisma.author.create({
       data: {
         name,
+        slug: slug || slugify(name),
         email,
         avatar,
       },
@@ -345,3 +350,4 @@ app.listen(PORT, () => {
   console.log(`🚀 Node.js Backend listening on http://localhost:${PORT}`);
   console.log(`📁 Uploads available at http://localhost:${PORT}/uploads/`);
 });
+

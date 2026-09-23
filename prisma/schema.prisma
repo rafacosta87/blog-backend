@@ -20,6 +20,7 @@ model Category {
 model Author {
   id     Int    @id @default(autoincrement())
   name   String
+  slug   String @unique
   email  String @unique
   avatar String
   posts  Post[]
